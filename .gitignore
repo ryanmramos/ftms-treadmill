@@ -1,0 +1,13 @@
+garmin/.DS_Store
+.DS_Store
+
+# Connect IQ build output
+garmin/**/bin/
+
+# Developer signing material and local secrets
+*.der
+*.pem
+*.key
+*.p12
+.env
+.env.*
