@@ -1,0 +1,17 @@
+class FtmsConstants {
+    static const FLAG_MORE_DATA = 0x0001;
+    static const FLAG_AVERAGE_SPEED_PRESENT = 0x0002;
+    static const FLAG_TOTAL_DISTANCE_PRESENT = 0x0004;
+    static const FLAG_INCLINE_AND_RAMP_ANGLE_PRESENT = 0x0008;
+
+    static const FLAG_ELEVATION_GAIN_PRESENT = 0x0010;
+    static const FLAG_INSTANTANEOUS_PACE_PRESENT = 0x0020;
+    static const FLAG_AVERAGE_PACE_PRESENT = 0x0040;
+    static const FLAG_EXPENDED_ENERGY_PRESENT = 0x0080;
+    static const FLAG_HEART_RATE_PRESENT = 0x0100;
+    static const FLAG_METABOLIC_EQUIVALENT_PRESENT = 0x0200;
+    static const FLAG_ELAPSED_TIME_PRESENT = 0x0400;
+    static const FLAG_REMAINING_TIME_PRESENT = 0x0800;
+    static const FLAG_FORCE_ON_BELT_AND_POWER_OUTPUT_PRESENT = 0x1000;
+    static const RESERVED_FLAGS_MASK = 0xE000;
+}
