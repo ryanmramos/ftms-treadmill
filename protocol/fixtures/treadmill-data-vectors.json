@@ -1,0 +1,43 @@
+{
+  "formatVersion": 1,
+  "vectors": [
+    {
+      "name": "flags_only_more_data",
+      "description": "More Data is set, so instantaneous speed is absent.",
+      "bytesHex": "01 00",
+      "expected": {
+        "flags": 1,
+        "speedMps": null,
+        "totalDistanceM": null,
+        "inclinePercent": null,
+        "warnings": []
+      }
+    },
+    {
+      "name": "mvp_speed_distance_incline",
+      "description": "Speed 8.00 km/h, total distance 1193046 m, incline -1.5%.",
+      "bytesHex": "0C 00 20 03 56 34 12 F1 FF 00 00",
+      "expected": {
+        "flags": 12,
+        "speedMps": 2.222222,
+        "totalDistanceM": 1193046,
+        "inclinePercent": -1.5,
+        "warnings": []
+      }
+    },
+    {
+      "name": "truncated_instantaneous_speed",
+      "description": "Speed is required but only one of its two bytes is present.",
+      "bytesHex": "00 00 20",
+      "expected": {
+        "flags": 0,
+        "speedMps": null,
+        "totalDistanceM": null,
+        "inclinePercent": null,
+        "warnings": [
+          "truncated instantaneous speed"
+        ]
+      }
+    }
+  ]
+}
