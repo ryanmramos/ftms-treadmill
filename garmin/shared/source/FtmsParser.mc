@@ -93,7 +93,13 @@ class FtmsParser {
                 return sample;
             }
 
-            sample.inclinePercent = rawIncline.toFloat() / 10.0;
+            // FTMS reserves signed 16-bit value 0x7FFF for unavailable incline data
+            // (see specification)
+            if (rawIncline == FtmsConstants.INCLINE_DATA_NOT_AVAILABLE) {
+                sample.parseWarnings.add("incline data unavailable");
+            } else {
+                sample.inclinePercent = rawIncline.toFloat() / 10.0;
+            }
         }
 
         // unsupported flags below

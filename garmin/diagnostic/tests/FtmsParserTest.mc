@@ -179,4 +179,70 @@ class FtmsParserTest {
 
         return true;
     }
+
+    (:test)
+    static function testZeroMetricsAreValid(logger as Test.Logger) as Boolean {
+        var parser = new FtmsParser();
+        var sample = parser.parse([
+            0x0C, 0x00,
+            0x00, 0x00,
+            0x00, 0x00, 0x00,
+            0x00, 0x00,
+            0x00, 0x00
+        ]b, 6060);
+
+        Test.assertEqualMessage(0.0, sample.speedMps, "zero speed");
+        Test.assertEqualMessage(0.0, sample.totalDistanceM, "zero distance");
+        Test.assertEqualMessage(0.0, sample.inclinePercent, "zero incline");
+        Test.assertEqualMessage(0, sample.parseWarnings.size(), "warning count");
+
+        return true;
+    }
+
+    (:test)
+    static function testUnavailableIncline(logger as Test.Logger) as Boolean {
+        var parser = new FtmsParser();
+        var sample = parser.parse([
+            0x08, 0x00,
+            0x00, 0x00,
+            0xFF, 0x7F,
+            0x00, 0x00
+        ]b, 7070);
+
+        Test.assertEqualMessage(0.0, sample.speedMps, "zero speed");
+        Test.assertMessage(sample.inclinePercent == null, "incline should be unavailable");
+        Test.assertEqualMessage(1, sample.parseWarnings.size(), "warning count");
+        Test.assertEqualMessage(
+            "incline data unavailable",
+            sample.parseWarnings[0],
+            "unavailable-incline warning"
+        );
+
+        return true;
+    }
+
+    (:test)
+    static function testMaximumUnsignedValues(logger as Test.Logger) as Boolean {
+        var parser = new FtmsParser();
+
+        // Flags: total distance present. More Data is clear, so speed is present
+        var sample = parser.parse([
+            0x04, 0x00,
+            0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF
+        ]b, 8080);
+
+        Test.assertMessage(
+            sample.speedMps >= 182.04 && sample.speedMps <= 182.05,
+            "maximum speed in meters per second"
+        );
+        Test.assertEqualMessage(
+            16777215.0,
+            sample.totalDistanceM,
+            "maximum 24-bit distance in meters"
+        );
+        Test.assertEqualMessage(0, sample.parseWarnings.size(), "warning count");
+
+        return true;
+    }
 }

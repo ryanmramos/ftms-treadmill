@@ -34,9 +34,43 @@
         "speedMps": null,
         "totalDistanceM": null,
         "inclinePercent": null,
-        "warnings": [
-          "truncated instantaneous speed"
-        ]
+        "warnings": ["truncated instantaneous speed"]
+      }
+    },
+    {
+      "name": "zero_mvp_metrics",
+      "description": "Speed, total distance, and incline are present and all validly zero.",
+      "bytesHex": "0C 00 00 00 00 00 00 00 00 00 00",
+      "expected": {
+        "flags": 12,
+        "speedMps": 0,
+        "totalDistanceM": 0,
+        "inclinePercent": 0,
+        "warnings": []
+      }
+    },
+    {
+      "name": "unavailable_incline",
+      "description": "Incline is present but uses the FTMS 0x7FFF Data Not Available sentinel.",
+      "bytesHex": "08 00 00 00 FF 7F 00 00",
+      "expected": {
+        "flags": 8,
+        "speedMps": 0,
+        "totalDistanceM": null,
+        "inclinePercent": null,
+        "warnings": ["incline data unavailable"]
+      }
+    },
+    {
+      "name": "maximum_unsigned_speed_and_distance",
+      "description": "Maximum raw unsigned 16-bit speed and 24-bit total distance values.",
+      "bytesHex": "04 00 FF FF FF FF FF",
+      "expected": {
+        "flags": 4,
+        "speedMps": 182.041667,
+        "totalDistanceM": 16777215,
+        "inclinePercent": null,
+        "warnings": []
       }
     }
   ]

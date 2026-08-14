@@ -20,6 +20,7 @@ The Garmin apps consume notifications from the FTMS Treadmill Data characteristi
 - Standard non-required (fields not being used) fields are safely skipped to preserve packet alignment.
 - Reserved flag bits produce a warning.
 - Unexpected trailing bytes produce a warning.
+- An incline raw value of `0x7FFF` means FTMS Data Not Available; the parser exposes no incline value and records a warning.
 
 ## Fixture corpus
 

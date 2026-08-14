@@ -14,4 +14,6 @@ class FtmsConstants {
     static const FLAG_REMAINING_TIME_PRESENT = 0x0800;
     static const FLAG_FORCE_ON_BELT_AND_POWER_OUTPUT_PRESENT = 0x1000;
     static const RESERVED_FLAGS_MASK = 0xE000;
+
+    static const INCLINE_DATA_NOT_AVAILABLE = 0x7FFF;
 }
