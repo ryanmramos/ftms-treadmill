@@ -72,6 +72,18 @@
         "inclinePercent": null,
         "warnings": []
       }
+    },
+    {
+      "name": "truncated_flags",
+      "description": "A one-byte packet cannot contain the required 16-bit flags field.",
+      "bytesHex": "00",
+      "expected": {
+        "flags": 0,
+        "speedMps": null,
+        "totalDistanceM": null,
+        "inclinePercent": null,
+        "warnings": ["truncated flags"]
+      }
     }
   ]
 }

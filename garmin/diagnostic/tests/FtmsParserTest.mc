@@ -245,4 +245,70 @@ class FtmsParserTest {
 
         return true;
     }
+
+    (:test)
+    static function testTruncatedFlags(logger as Test.Logger) as Boolean {
+        var parser = new FtmsParser();
+
+        var emptySample = parser.parse([]b, 9090);
+        var oneByteSample = parser.parse([0x00]b, 9091);
+
+        Test.assertEqualMessage(0, emptySample.rawLength, "empty packet length");
+        Test.assertEqualMessage(1, oneByteSample.rawLength, "one-byte packet length");
+        Test.assertEqualMessage(0, emptySample.flags, "empty packet flags");
+        Test.assertEqualMessage(0, oneByteSample.flags, "one-byte packet flags");
+        Test.assertEqualMessage(
+            "truncated flags",
+            emptySample.parseWarnings[0],
+            "empty packet warning"
+        );
+        Test.assertEqualMessage(
+            "truncated flags",
+            oneByteSample.parseWarnings[0],
+            "one-byte packet warning"
+        );
+
+        return true;
+    }
+
+    (:test)
+    static function testTruncatedMvpFieldGroups(logger as Test.Logger) as Boolean {
+        var parser = new FtmsParser();
+
+        var truncatedDistance = parser.parse([
+            0x04, 0x00,
+            0x00, 0x00,
+            0xAA, 0xBB
+        ]b, 9100);
+
+        var truncatedIncline = parser.parse([
+            0x08, 0x00,
+            0x00, 0x00
+        ]b, 9101);
+
+        var truncatedRampAngle = parser.parse([
+            0x08, 0x00,
+            0x00, 0x00,
+            0x00, 0x00,
+            0xAA
+        ]b, 9102);
+
+        Test.assertEqualMessage(
+            "truncated total distance",
+            truncatedDistance.parseWarnings[0],
+            "distance warning"
+        );
+        Test.assertEqualMessage(
+            "truncated incline",
+            truncatedIncline.parseWarnings[0],
+            "incline warning"
+        );
+        Test.assertEqualMessage(
+            "truncated ramp angle",
+            truncatedRampAngle.parseWarnings[0],
+            "ramp-angle warning"
+        );
+
+        return true;
+    }
 }
