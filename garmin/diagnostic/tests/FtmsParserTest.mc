@@ -41,12 +41,18 @@ class FtmsParserTest {
         Test.assertMessage(sample.speedMps != null, "speed should be present");
         Test.assertMessage(sample.totalDistanceM != null, "distance should be present");
         Test.assertMessage(sample.inclinePercent != null, "incline should be present");
+        var speed = sample.speedMps;
+        var distance = sample.totalDistanceM;
+        var incline = sample.inclinePercent;
+        if (speed == null || distance == null || incline == null) {
+            return false;
+        }
         Test.assertMessage(
-            sample.speedMps >= 2.22 && sample.speedMps <= 2.23,
+            speed >= 2.22 && speed <= 2.23,
             "speed in meters per second"
         );
-        Test.assertEqualMessage(1193046.0, sample.totalDistanceM, "distance in meters");
-        Test.assertEqualMessage(-1.5, sample.inclinePercent, "incline percent");
+        Test.assertEqualMessage(1193046.0, distance, "distance in meters");
+        Test.assertEqualMessage(-1.5, incline, "incline percent");
         Test.assertEqualMessage(0, sample.parseWarnings.size(), "warning count");
 
         return true;
@@ -62,6 +68,7 @@ class FtmsParserTest {
         Test.assertEqualMessage(0x0000, sample.flags, "flags");
         Test.assertMessage(sample.speedMps == null, "speed should be unavailable");
         Test.assertEqualMessage(1, sample.parseWarnings.size(), "warning count");
+        Test.assertMessage(sample.hasFatalError(), "truncated speed is fatal");
         Test.assertEqualMessage(
             "truncated instantaneous speed",
             sample.parseWarnings[0],
@@ -113,9 +120,16 @@ class FtmsParserTest {
         var sample = parser.parse(bytes, 2020);
 
         Test.assertEqualMessage(0x1FFE, sample.flags, "flags");
+        // Flags(2) + speed(2) + average speed(2) + distance(3) + incline/ramp(4)
+        // + elevation(4) + pace(4) + energy(5) + HR/MET(2) + elapsed/remaining(4)
+        // + force/power(4) = 36 bytes.
         Test.assertEqualMessage(36, sample.rawLength, "raw packet length");
+        var speed = sample.speedMps;
+        if (speed == null) {
+            return false;
+        }
         Test.assertMessage(
-            sample.speedMps >= 2.22 && sample.speedMps <= 2.23,
+            speed >= 2.22 && speed <= 2.23,
             "speed in meters per second"
         );
         Test.assertEqualMessage(42.0, sample.totalDistanceM, "distance in meters");
@@ -129,11 +143,13 @@ class FtmsParserTest {
     static function testReservedFlagsAreRejected(logger as Test.Logger) as Boolean {
         var parser = new FtmsParser();
 
-        // Bit 13 is reserved by FTMS
-        var sample = parser.parse([0x00, 0x20]b, 3030);
+        // Bit 13 is reserved by FTMS, but the speed sample is still usable.
+        var sample = parser.parse([0x00, 0x20, 0x20, 0x03]b, 3030);
 
         Test.assertEqualMessage(0x2000, sample.flags, "flags");
         Test.assertEqualMessage(1, sample.parseWarnings.size(), "warning count");
+        Test.assertMessage(sample.speedMps != null, "reserved flags must not hide speed");
+        Test.assertMessage(!sample.hasFatalError(), "reserved flags are a warning");
         Test.assertEqualMessage(
             "reserved treadmill data flags set",
             sample.parseWarnings[0],
@@ -232,8 +248,12 @@ class FtmsParserTest {
             0xFF, 0xFF, 0xFF
         ]b, 8080);
 
+        var speed = sample.speedMps;
+        if (speed == null) {
+            return false;
+        }
         Test.assertMessage(
-            sample.speedMps >= 182.04 && sample.speedMps <= 182.05,
+            speed >= 182.04 && speed <= 182.05,
             "maximum speed in meters per second"
         );
         Test.assertEqualMessage(
@@ -298,6 +318,7 @@ class FtmsParserTest {
             truncatedDistance.parseWarnings[0],
             "distance warning"
         );
+        Test.assertMessage(truncatedDistance.hasFatalError(), "distance truncation is fatal");
         Test.assertEqualMessage(
             "truncated incline",
             truncatedIncline.parseWarnings[0],
@@ -308,6 +329,8 @@ class FtmsParserTest {
             truncatedRampAngle.parseWarnings[0],
             "ramp-angle warning"
         );
+        Test.assertMessage(truncatedIncline.hasFatalError(), "incline truncation is fatal");
+        Test.assertMessage(truncatedRampAngle.hasFatalError(), "ramp truncation is fatal");
 
         return true;
     }

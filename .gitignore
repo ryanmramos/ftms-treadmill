@@ -11,3 +11,4 @@ garmin/**/bin/
 *.p12
 .env
 .env.*
+.ciq.local.env

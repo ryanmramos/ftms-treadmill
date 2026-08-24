@@ -43,6 +43,11 @@ class FtmsByteReader {
 
         var low = readU8();
         var high = readU8();
+
+        if (low == null || high == null) {
+            return null;
+        }
+
         return low | (high << 8);
     }
 
@@ -54,6 +59,10 @@ class FtmsByteReader {
 
         var low16 = readU16LE();
         var high8 = readU8();
+
+        if (low16 == null || high8 == null) {
+            return null;
+        }
 
         return low16 | (high8 << 16);
     }

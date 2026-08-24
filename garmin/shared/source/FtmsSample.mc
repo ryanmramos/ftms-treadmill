@@ -8,6 +8,7 @@ class FtmsSample {
     var receivedAtMs as Number;
     var rawLength as Number;
     var parseWarnings as Array<String>;
+    var parseErrors as Array<String>;
 
     function initialize(
         flags as Number,
@@ -22,5 +23,23 @@ class FtmsSample {
         totalDistanceM = null;
         inclinePercent = null;
         parseWarnings = [];
+        parseErrors = [];
+    }
+
+    function addWarning(message as String) as Void {
+        parseWarnings.add(message);
+    }
+
+    function addParseError(message as String) as Void {
+        parseErrors.add(message);
+        parseWarnings.add(message);
+    }
+
+    function hasFatalError() as Boolean {
+        return parseErrors.size() != 0;
+    }
+
+    function isValid() as Boolean {
+        return !hasFatalError();
     }
 }

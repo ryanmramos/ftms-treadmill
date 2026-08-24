@@ -14,7 +14,7 @@ class FtmsParser {
         }
 
         if (!reader.skip(byteCount)) {
-            sample.parseWarnings.add("truncated " + fieldName);
+            sample.addParseError("truncated " + fieldName);
             return false;
         }
 
@@ -29,15 +29,16 @@ class FtmsParser {
 
         if (flags == null) {
             var sample = new FtmsSample(0, receivedAtMs, bytes.size());
-            sample.parseWarnings.add("truncated flags");
+            sample.addParseError("truncated flags");
             return sample;
         }
 
         var sample = new FtmsSample(flags, receivedAtMs, bytes.size());
 
         if ((flags & FtmsConstants.RESERVED_FLAGS_MASK) != 0) {
-            sample.parseWarnings.add("reserved treadmill data flags set");
-            return sample;
+            // Reserved bits are a diagnostic warning. They do not make the
+            // otherwise-decodable speed sample unusable.
+            sample.addWarning("reserved treadmill data flags set");
         }
 
         // speed block.
@@ -48,7 +49,7 @@ class FtmsParser {
             var rawSpeed = reader.readU16LE();
 
             if (rawSpeed == null) {
-                sample.parseWarnings.add("truncated instantaneous speed");
+                sample.addParseError("truncated instantaneous speed");
                 return sample;
             }
 
@@ -70,7 +71,7 @@ class FtmsParser {
             var rawDistanceM = reader.readU24LE();
 
             if (rawDistanceM == null) {
-                sample.parseWarnings.add("truncated total distance");
+                sample.addParseError("truncated total distance");
                 return sample;
             }
 
@@ -82,21 +83,21 @@ class FtmsParser {
             var rawIncline = reader.readS16LE();
 
             if (rawIncline == null) {
-                sample.parseWarnings.add("truncated incline");
+                sample.addParseError("truncated incline");
                 return sample;
             }
 
             var rawRampAngle = reader.readS16LE();
 
             if (rawRampAngle == null) {
-                sample.parseWarnings.add("truncated ramp angle");
+                sample.addParseError("truncated ramp angle");
                 return sample;
             }
 
             // FTMS reserves signed 16-bit value 0x7FFF for unavailable incline data
             // (see specification)
             if (rawIncline == FtmsConstants.INCLINE_DATA_NOT_AVAILABLE) {
-                sample.parseWarnings.add("incline data unavailable");
+                sample.addWarning("incline data unavailable");
             } else {
                 sample.inclinePercent = rawIncline.toFloat() / 10.0;
             }
@@ -168,7 +169,7 @@ class FtmsParser {
 
         // final check
         if (reader.remaining() != 0) {
-            sample.parseWarnings.add("unexpected trailing treadmill data");
+            sample.addWarning("unexpected trailing treadmill data");
         }
 
         return sample;
