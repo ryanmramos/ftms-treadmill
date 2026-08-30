@@ -16,4 +16,8 @@ class FtmsConstants {
     static const RESERVED_FLAGS_MASK = 0xE000;
 
     static const INCLINE_DATA_NOT_AVAILABLE = 0x7FFF;
+
+    // FTMS service
+    static const FTMS_SERVICE_UUID = "00001826-0000-1000-8000-00805F9B34FB";
+    static const TREADMILL_DATA_UUID = "00002ACD-0000-1000-8000-00805F9B34FB";
 }
