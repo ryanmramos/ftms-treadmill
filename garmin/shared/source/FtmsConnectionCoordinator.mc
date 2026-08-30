@@ -19,6 +19,7 @@ class FtmsConnectionCoordinator {
     private var _selectedScanResult as BluetoothLowEnergy.ScanResult?;
 
     private var _parser as FtmsParser;
+    private var _normalizer as FtmsRecordNormalizer;
     private var _recordAssembler as FtmsRecordAssembler;
     private var _latestSample as FtmsSample?;
     private var _lastValidSampleAtMs as Number?;
@@ -36,6 +37,7 @@ class FtmsConnectionCoordinator {
         _selectedIdentity = null;
         _selectedScanResult = null;
         _parser = new FtmsParser();
+        _normalizer = new FtmsRecordNormalizer();
         _recordAssembler = new FtmsRecordAssembler();
         _latestSample = null;
         _lastValidSampleAtMs = null;
@@ -183,14 +185,13 @@ class FtmsConnectionCoordinator {
             return;
         }
 
-        // The current parser consumes one complete characteristic value. A
-        // multi-notification record is recognized and held at this boundary;
-        // field-level normalization is a separate transport step.
-        if (!record.isSingleNotification()) {
+        var parserBytes = _normalizer.normalize(record);
+
+        if (parserBytes == null) {
             return;
         }
 
-        var sample = _parser.parse(record.fragments[0], record.receivedAtMs);
+        var sample = _parser.parse(parserBytes, record.receivedAtMs);
         _latestSample = sample;
 
         // Warnings are diagnostic metadata. Only fatal parse errors or a

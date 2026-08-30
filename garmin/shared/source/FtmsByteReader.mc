@@ -81,4 +81,17 @@ class FtmsByteReader {
 
         return unsigned16;
     }
+
+    // read and return the next count bytes without decoding them
+    function readBytes(count as Number) as ByteArray? {
+        var start = _offset;
+
+        // skip() validates the count and leaves the cursor unchanged on failure
+        if (!skip(count)) {
+            return null;
+        }
+
+        // return only the bytes that were consumed
+        return _bytes.slice(start, _offset);
+    }
 }

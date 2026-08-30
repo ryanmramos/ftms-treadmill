@@ -12,3 +12,9 @@ garmin/**/bin/
 .env
 .env.*
 .ciq.local.env
+
+# IntelliJ Monkey C adapter build output
+tools/intellij-monkeyc/.gradle/
+tools/intellij-monkeyc/.intellijPlatform/
+tools/intellij-monkeyc/build/
+/tools/intellij-monkeyc/

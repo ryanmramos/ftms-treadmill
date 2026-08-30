@@ -69,4 +69,47 @@ class FtmsByteReaderTest {
 
         return true;
     }
+
+    (:test)
+    static function testReadBytesReturnsSliceAndAdvances(
+        logger as Test.Logger
+    ) as Boolean {
+        var reader = new FtmsByteReader([0xAA, 0x56, 0x34, 0x12]b);
+
+        Test.assertEqualMessage(0xAA, reader.readU8(), "prefix byte");
+
+        var bytes = reader.readBytes(3);
+
+        Test.assertMessage(bytes != null, "readBytes should return a slice");
+
+        if (bytes == null) {
+            return false;
+        }
+
+        Test.assertEqualMessage(3, bytes.size(), "slice length");
+        Test.assertEqualMessage(0x56, bytes[0], "slice first byte");
+        Test.assertEqualMessage(0x34, bytes[1], "slice second byte");
+        Test.assertEqualMessage(0x12, bytes[2], "slice third byte");
+        Test.assertEqualMessage(0, reader.remaining(), "reader advanced");
+
+        return true;
+    }
+
+    (:test)
+    static function testReadBytesDoesNotConsumeTruncatedInput(
+        logger as Test.Logger
+    ) as Boolean {
+        var reader = new FtmsByteReader([0x56, 0x34]b);
+
+        Test.assertMessage(
+            reader.readBytes(3) == null,
+            "truncated readBytes should return null"
+        );
+        Test.assertEqualMessage(
+            2, reader.remaining(),
+            "truncated readBytes should not advance the cursor"
+        );
+
+        return true;
+    }
 }

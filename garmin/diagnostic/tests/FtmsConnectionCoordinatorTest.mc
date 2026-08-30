@@ -246,6 +246,35 @@ class FtmsConnectionCoordinatorTest {
     }
 
     (:test)
+    static function testFragmentedTreadmillDataMakesCoordinatorReady(
+        logger as Test.Logger
+    ) as Boolean {
+        var transport = new ReplayFtmsTransport();
+        var coordinator = new FtmsConnectionCoordinator(transport);
+
+        coordinator.beginScan();
+        transport.emitScanResult("treadmill-1", "FTMS-MOCK", -54);
+        coordinator.selectCandidate("treadmill-1");
+        transport.emitConnected();
+        transport.emitTreadmillDataDiscovered();
+
+        transport.emitTreadmillData([0x01, 0x00]b, 1000);
+        transport.emitTreadmillData([0x00, 0x00, 0x20, 0x03]b, 1001);
+
+        Test.assertEqualMessage(
+            FtmsConnectionCoordinator.STATE_READY,
+            coordinator.getState(),
+            "state after treadmill data"
+        );
+        Test.assertMessage(
+            coordinator.getLatestSample() != null,
+            "latest sample should be available"
+        );
+
+        return true;
+    }
+
+    (:test)
     static function testMalformedDataDoesNotMakeCoordinatorReady(
         logger as Test.Logger
     ) as Boolean {
