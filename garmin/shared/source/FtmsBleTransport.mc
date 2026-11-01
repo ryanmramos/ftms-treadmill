@@ -23,6 +23,7 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         _profileFailed = false;
         _discoveryPending = false;
         BluetoothLowEnergy.setDelegate(self);
+        unpairAll();
         registerFtmsProfile();
     }
 
@@ -73,6 +74,9 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         }
 
         if (state == BluetoothLowEnergy.CONNECTION_STATE_DISCONNECTED) {
+            // free the pairing slot. a paired device that stays registered
+            // makes the next pairDevice for it fail.
+            BluetoothLowEnergy.unpairDevice(device);
             _device = null;
             _treadmillDataCharacteristic = null;
 
@@ -95,16 +99,23 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
     }
 
     function connect(device as Object) as Void {
+        var reason = "pairing failed";
+
         try {
             _device = BluetoothLowEnergy.pairDevice(
                 device as BluetoothLowEnergy.ScanResult
             );
         } catch (ex instanceof BluetoothLowEnergy.DevicePairException) {
             _device = null;
+            var message = ex.getErrorMessage();
+
+            if (message != null) {
+                reason += ": " + message;
+            }
         }
 
         if (_device == null && _listener != null) {
-            _listener.onConnectionFailed("pairing failed");
+            _listener.onConnectionFailed(reason);
         }
     }
 
@@ -288,6 +299,23 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         }
 
         return false;
+    }
+
+    // this app holds at most one pairing. clear any left over from a crash or
+    // an earlier build so a fresh pairDevice always has a slot.
+    private function unpairAll() as Void {
+        var devices = [] as Array<BluetoothLowEnergy.Device>;
+        var paired = BluetoothLowEnergy.getPairedDevices();
+        var next = paired.next();
+
+        while (next != null) {
+            devices.add(next as BluetoothLowEnergy.Device);
+            next = paired.next();
+        }
+
+        for (var i = 0; i < devices.size(); i += 1) {
+            BluetoothLowEnergy.unpairDevice(devices[i]);
+        }
     }
 
     private function registerFtmsProfile() as Void {

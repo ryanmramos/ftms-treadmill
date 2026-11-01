@@ -629,6 +629,29 @@ class FtmsConnectionCoordinatorTest {
         return true;
     }
 
+    (:test)
+    static function testReconnectToSavedDeviceSkipsThePicker(
+        logger as Test.Logger
+    ) as Boolean {
+        var transport = new ReplayFtmsTransport();
+        var coordinator = new FtmsConnectionCoordinator(transport);
+
+        coordinator.reconnectTo("treadmill-1");
+        Test.assertMessage(transport.wasScanStarted(), "scans for the saved treadmill");
+
+        transport.emitScanResult("treadmill-2", "FTMS-MOCK", -40);
+        Test.assertEqualMessage(0, transport.getConnectCount(), "other device ignored");
+
+        transport.emitScanResult("treadmill-1", "FTMS-MOCK", -60);
+        Test.assertEqualMessage(
+            FtmsConnectionCoordinator.STATE_CONNECTING,
+            coordinator.getState(),
+            "connects without a pick"
+        );
+        Test.assertEqualMessage("treadmill-1", transport.getRequestedDevice(), "saved target");
+        return true;
+    }
+
     // scan, pick, connect, and discover, leaving the coordinator in SUBSCRIBING
     static function subscribe(
         transport as ReplayFtmsTransport,

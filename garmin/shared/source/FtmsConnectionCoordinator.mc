@@ -122,6 +122,20 @@ class FtmsConnectionCoordinator {
         return false;
     }
 
+    // resumes a treadmill saved from an earlier session: scans and connects
+    // as soon as a scan result matches it, ignoring other FTMS devices
+    function reconnectTo(device as Object) as Void {
+        cancelScheduledWork();
+        _selectedDevice = device;
+        _scanCandidates = [];
+        _retryAttempt = 0;
+        _wasLive = false;
+        _lostAlerted = false;
+        _reconnecting = true;
+        _transport.startScan();
+        setState(STATE_SCANNING);
+    }
+
     function stop() as Void {
         cancelScheduledWork();
         _assembler.discard();
