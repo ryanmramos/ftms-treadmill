@@ -7,20 +7,20 @@ import Toybox.BluetoothLowEnergy;
 // characteristics.
 class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
     private var _listener as FtmsTransportListener?;
-    private var _knownScanResults as Array<BluetoothLowEnergy.ScanResult>;
     private var _device as BluetoothLowEnergy.Device?;
     private var _treadmillDataCharacteristic as BluetoothLowEnergy.Characteristic?;
 
     private var _profileRegistered as Boolean;
+    private var _profileFailed as Boolean;
     private var _discoveryPending as Boolean;
 
     function initialize() {
         BleDelegate.initialize();
         _listener = null;
-        _knownScanResults = [];
         _device = null;
         _treadmillDataCharacteristic = null;
         _profileRegistered = false;
+        _profileFailed = false;
         _discoveryPending = false;
         BluetoothLowEnergy.setDelegate(self);
         registerFtmsProfile();
@@ -36,9 +36,9 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
             var scanResult = nextResult as BluetoothLowEnergy.ScanResult;
 
             if (advertisesFtmsService(scanResult) && _listener != null) {
+                // the ScanResult itself is the device handle
                 _listener.onScanResult(
-                    identityFor(scanResult), scanResult.getDeviceName(),
-                    scanResult.getRssi(), scanResult
+                    scanResult, scanResult.getDeviceName(), scanResult.getRssi()
                 );
             }
 
@@ -61,6 +61,8 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         }
 
         if (state == BluetoothLowEnergy.CONNECTION_STATE_REJECTED) {
+            // free the pairing slot pairDevice claimed
+            BluetoothLowEnergy.unpairDevice(device);
             _device = null;
 
             if (_listener != null) {
@@ -92,22 +94,24 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         );
     }
 
-    function connect(
-        identity as String,
-        scanResult as BluetoothLowEnergy.ScanResult?
-    ) as Void {
-        if (scanResult == null) {
-            if (_listener != null) {
-                _listener.onConnectionFailed("missing scan result");
-            }
-            return;
+    function connect(device as Object) as Void {
+        try {
+            _device = BluetoothLowEnergy.pairDevice(
+                device as BluetoothLowEnergy.ScanResult
+            );
+        } catch (ex instanceof BluetoothLowEnergy.DevicePairException) {
+            _device = null;
         }
-
-        _device = BluetoothLowEnergy.pairDevice(scanResult);
 
         if (_device == null && _listener != null) {
             _listener.onConnectionFailed("pairing failed");
         }
+    }
+
+    function isSameDevice(a as Object, b as Object) as Boolean {
+        return (a as BluetoothLowEnergy.ScanResult).isSameDevice(
+            b as BluetoothLowEnergy.ScanResult
+        );
     }
 
     function disconnect() as Void {
@@ -123,6 +127,13 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
     }
 
     function discoverTreadmillData() as Void {
+        if (_profileFailed) {
+            if (_listener != null) {
+                _listener.onConnectionFailed("ftms profile registration failed");
+            }
+            return;
+        }
+
         if (!_profileRegistered) {
             _discoveryPending = true;
             return;
@@ -206,6 +217,7 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
 
         if (status != BluetoothLowEnergy.STATUS_SUCCESS) {
             _profileRegistered = false;
+            _profileFailed = true;
             _discoveryPending = false;
 
             if (_listener != null) {
@@ -278,19 +290,6 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         return false;
     }
 
-    private function identityFor(
-        scanResult as BluetoothLowEnergy.ScanResult
-    ) as String {
-        for (var i = 0; i < _knownScanResults.size(); i += 1) {
-            if (_knownScanResults[i].isSameDevice(scanResult)) {
-                return "ble-" + i;
-            }
-        }
-
-        _knownScanResults.add(scanResult);
-        return "ble-" + (_knownScanResults.size() - 1);
-    }
-
     private function registerFtmsProfile() as Void {
         var profile = {
             :uuid => BluetoothLowEnergy.stringToUuid(
@@ -306,6 +305,10 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
             }]
         };
 
-        BluetoothLowEnergy.registerProfile(profile);
+        try {
+            BluetoothLowEnergy.registerProfile(profile);
+        } catch (ex instanceof BluetoothLowEnergy.ProfileRegistrationException) {
+            _profileFailed = true;
+        }
     }
 }

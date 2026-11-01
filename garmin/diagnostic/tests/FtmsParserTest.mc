@@ -67,12 +67,13 @@ class FtmsParserTest {
 
         Test.assertEqualMessage(0x0000, sample.flags, "flags");
         Test.assertMessage(sample.speedMps == null, "speed should be unavailable");
-        Test.assertEqualMessage(1, sample.parseWarnings.size(), "warning count");
+        Test.assertEqualMessage(0, sample.parseWarnings.size(), "warning count");
+        Test.assertEqualMessage(1, sample.parseErrors.size(), "error count");
         Test.assertMessage(sample.hasFatalError(), "truncated speed is fatal");
         Test.assertEqualMessage(
             "truncated instantaneous speed",
-            sample.parseWarnings[0],
-            "truncation warning"
+            sample.parseErrors[0],
+            "truncation error"
         );
 
         return true;
@@ -140,7 +141,7 @@ class FtmsParserTest {
     }
 
     (:test)
-    static function testReservedFlagsAreRejected(logger as Test.Logger) as Boolean {
+    static function testReservedFlagsAreWarnings(logger as Test.Logger) as Boolean {
         var parser = new FtmsParser();
 
         // Bit 13 is reserved by FTMS, but the speed sample is still usable.
@@ -186,11 +187,11 @@ class FtmsParserTest {
 
         Test.assertEqualMessage(0x0002, sample.flags, "flags");
         Test.assertEqualMessage(0.0, sample.speedMps, "speed in meters per second");
-        Test.assertEqualMessage(1, sample.parseWarnings.size(), "warning count");
+        Test.assertEqualMessage(0, sample.parseWarnings.size(), "warning count");
         Test.assertEqualMessage(
             "truncated average speed",
-            sample.parseWarnings[0],
-            "truncated skipped-field warning"
+            sample.parseErrors[0],
+            "truncated skipped-field error"
         );
 
         return true;
@@ -279,12 +280,12 @@ class FtmsParserTest {
         Test.assertEqualMessage(0, oneByteSample.flags, "one-byte packet flags");
         Test.assertEqualMessage(
             "truncated flags",
-            emptySample.parseWarnings[0],
+            emptySample.parseErrors[0],
             "empty packet warning"
         );
         Test.assertEqualMessage(
             "truncated flags",
-            oneByteSample.parseWarnings[0],
+            oneByteSample.parseErrors[0],
             "one-byte packet warning"
         );
 
@@ -315,18 +316,18 @@ class FtmsParserTest {
 
         Test.assertEqualMessage(
             "truncated total distance",
-            truncatedDistance.parseWarnings[0],
+            truncatedDistance.parseErrors[0],
             "distance warning"
         );
         Test.assertMessage(truncatedDistance.hasFatalError(), "distance truncation is fatal");
         Test.assertEqualMessage(
             "truncated incline",
-            truncatedIncline.parseWarnings[0],
+            truncatedIncline.parseErrors[0],
             "incline warning"
         );
         Test.assertEqualMessage(
             "truncated ramp angle",
-            truncatedRampAngle.parseWarnings[0],
+            truncatedRampAngle.parseErrors[0],
             "ramp-angle warning"
         );
         Test.assertMessage(truncatedIncline.hasFatalError(), "incline truncation is fatal");

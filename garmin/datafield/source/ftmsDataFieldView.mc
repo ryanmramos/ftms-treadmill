@@ -1,11 +1,13 @@
 import Toybox.Activity;
+import Toybox.Attention;
 import Toybox.Graphics;
 import Toybox.Lang;
 import Toybox.WatchUi;
 
 // full-screen treadmill data field, drawn to the design canvas (see Theme.mc).
-// BLE, settings, and FIT wiring remain WIP: every reading is "--" and the state is
-// searching until a coordinator feeds the fields below. partial-screen layout is not drawn yet.
+// the view is the coordinator's listener for state and alerts. the app does not
+// own a coordinator yet, so readings stay "--" and the state stays searching.
+// settings, FIT wiring, and the partial-screen layout are not built yet.
 class ftmsDataFieldView extends WatchUi.DataField {
     // what the user sees; map from FtmsConnectionCoordinator states when it is wired in
     static const VS_SEARCHING = 0;
@@ -37,6 +39,33 @@ class ftmsDataFieldView extends WatchUi.DataField {
     }
 
     function compute(info as Activity.Info) as Void {
+    }
+
+    // FtmsCoordinatorListener. maps coordinator states to the design's visual
+    // states. unconfigured uses the searching look until the picker exists.
+    function onStateChanged(state as Number) as Void {
+        if (state == FtmsConnectionCoordinator.STATE_READY) {
+            _visualState = VS_LIVE;
+        } else if (state == FtmsConnectionCoordinator.STATE_STALE) {
+            _visualState = VS_STALE;
+        } else if (state == FtmsConnectionCoordinator.STATE_BACKOFF) {
+            _visualState = VS_LOST;
+        } else if (state == FtmsConnectionCoordinator.STATE_CONNECTING ||
+            state == FtmsConnectionCoordinator.STATE_DISCOVERING ||
+            state == FtmsConnectionCoordinator.STATE_SUBSCRIBING) {
+            _visualState = VS_CONNECTING;
+        } else {
+            _visualState = VS_SEARCHING;
+        }
+    }
+
+    // one vibration per lost or restored edge; the coordinator never repeats one
+    function onConnectionLost() as Void {
+        vibrate();
+    }
+
+    function onConnectionRestored() as Void {
+        vibrate();
     }
 
     function onUpdate(dc as Dc) as Void {
@@ -149,6 +178,12 @@ class ftmsDataFieldView extends WatchUi.DataField {
                 (ox + slash[0][0] * s).toNumber(), (oy + slash[0][1] * s).toNumber(),
                 (ox + slash[1][0] * s).toNumber(), (oy + slash[1][1] * s).toNumber()
             );
+        }
+    }
+
+    private function vibrate() as Void {
+        if (Attention has :vibrate) {
+            Attention.vibrate([new Attention.VibeProfile(50, 400)]);
         }
     }
 

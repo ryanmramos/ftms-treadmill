@@ -1,5 +1,7 @@
 import Toybox.Lang;
 
+// one decoded treadmill reading in canonical units, plus parse diagnostics.
+// warnings are informational; any parse error makes the sample invalid.
 class FtmsSample {
     var speedMps as Float?;
     var totalDistanceM as Float?;
@@ -32,7 +34,6 @@ class FtmsSample {
 
     function addParseError(message as String) as Void {
         parseErrors.add(message);
-        parseWarnings.add(message);
     }
 
     function hasFatalError() as Boolean {
@@ -41,5 +42,27 @@ class FtmsSample {
 
     function isValid() as Boolean {
         return !hasFatalError();
+    }
+
+    // folds in an earlier More Data fragment of the same record. values already
+    // on this sample win, diagnostics keep arrival order, and More Data is
+    // cleared from the merged flags. the earlier sample must not be reused.
+    function mergeEarlier(earlier as FtmsSample) as Void {
+        if (speedMps == null) {
+            speedMps = earlier.speedMps;
+        }
+
+        if (totalDistanceM == null) {
+            totalDistanceM = earlier.totalDistanceM;
+        }
+
+        if (inclinePercent == null) {
+            inclinePercent = earlier.inclinePercent;
+        }
+
+        flags = (flags | earlier.flags) & ~FtmsConstants.FLAG_MORE_DATA;
+        rawLength += earlier.rawLength;
+        parseWarnings = earlier.parseWarnings.addAll(parseWarnings);
+        parseErrors = earlier.parseErrors.addAll(parseErrors);
     }
 }

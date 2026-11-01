@@ -1,13 +1,18 @@
 import Toybox.Lang;
 
+// distance observed while connected, from the treadmill's total distance
+// counter. pauses and disconnects rebaseline, so gaps are never bridged.
 class FtmsDistanceAccumulator {
     private var _accumulatedM as Float;
+    // a distance has been seen since start; until then the value is unavailable
+    private var _hasValue as Boolean;
     private var _baselineM as Float?;
     private var _started as Boolean;
     private var _paused as Boolean;
 
     function initialize() {
         _accumulatedM = 0.0;
+        _hasValue = false;
         _baselineM = null;
         _started = false;
         _paused = false;
@@ -42,6 +47,8 @@ class FtmsDistanceAccumulator {
             return;
         }
 
+        _hasValue = true;
+
         if (_baselineM == null || totalDistanceM < _baselineM) {
             _baselineM = totalDistanceM;
             return;
@@ -51,8 +58,9 @@ class FtmsDistanceAccumulator {
         _baselineM = totalDistanceM;
     }
 
-    function getAccumulatedM() as Float {
-        return _accumulatedM;
+    // null until a distance has been seen, so the field shows -- and not 0
+    function getAccumulatedM() as Float? {
+        return _hasValue ? _accumulatedM : null;
     }
 
     function hasRawBaseline() as Boolean {
@@ -60,6 +68,10 @@ class FtmsDistanceAccumulator {
     }
 
     private function rebaseline(totalDistanceM as Float?) as Void {
+        if (totalDistanceM != null) {
+            _hasValue = true;
+        }
+
         _baselineM = totalDistanceM;
     }
 }

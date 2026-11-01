@@ -59,4 +59,20 @@ class FtmsDistanceAccumulatorTest {
         Test.assertEqualMessage(10.0, accumulator.getAccumulatedM(), "missing distance");
         return true;
     }
+
+    (:test)
+    static function testNoDistanceSeenIsUnavailable(
+        logger as Test.Logger
+    ) as Boolean {
+        var accumulator = new FtmsDistanceAccumulator();
+        Test.assertMessage(accumulator.getAccumulatedM() == null, "before start");
+
+        accumulator.start(null);
+        accumulator.observe(null);
+        Test.assertMessage(accumulator.getAccumulatedM() == null, "no distance field yet");
+
+        accumulator.observe(50.0);
+        Test.assertEqualMessage(0.0, accumulator.getAccumulatedM(), "first distance is a baseline");
+        return true;
+    }
 }

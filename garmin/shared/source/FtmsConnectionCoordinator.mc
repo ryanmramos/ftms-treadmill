@@ -1,6 +1,16 @@
 import Toybox.Lang;
-import Toybox.BluetoothLowEnergy;
 
+// receives coordinator edges. the data field maps state to its visual states
+// and vibrates once per lost or restored alert.
+typedef FtmsCoordinatorListener as interface {
+    function onStateChanged(state as Number) as Void;
+    function onConnectionLost() as Void;
+    function onConnectionRestored() as Void;
+};
+
+// connection state machine for one selected treadmill. the transport and
+// scheduler are injected, and the app passes a monotonic clock to onTimerTick,
+// so every path runs in tests without hardware or sleeping.
 class FtmsConnectionCoordinator {
     static const STATE_UNCONFIGURED = 0;
     static const STATE_SCANNING = 1;
@@ -14,42 +24,45 @@ class FtmsConnectionCoordinator {
     private var _state as Number;
     private var _transport as FtmsTransport;
     private var _scheduler as FtmsScheduler?;
+    private var _listener as FtmsCoordinatorListener?;
     private var _scanCandidates as Array<FtmsScanCandidate>;
-    private var _selectedIdentity as String?;
-    private var _selectedScanResult as BluetoothLowEnergy.ScanResult?;
+    private var _selectedDevice as Object?;
+    // true while a backoff scan is looking for the selected device
+    private var _reconnecting as Boolean;
 
-    private var _parser as FtmsParser;
-    private var _normalizer as FtmsRecordNormalizer;
-    private var _recordAssembler as FtmsRecordAssembler;
+    private var _assembler as FtmsRecordAssembler;
     private var _latestSample as FtmsSample?;
-    private var _lastValidSampleAtMs as Number?;
+    // last valid sample time, or the first tick after subscribing
+    private var _staleClockStartMs as Number?;
     private var _retryAttempt as Number;
-    private var _connectionAlerted as Boolean;
-    private var _lostAlertCount as Number;
-    private var _restoredAlertCount as Number;
+    // reached READY since selection; only then does a drop count as lost
+    private var _wasLive as Boolean;
+    private var _lostAlerted as Boolean;
 
     function initialize(transport as FtmsTransport) {
         _state = STATE_UNCONFIGURED;
         _transport = transport;
         _transport.setListener(self);
         _scheduler = null;
+        _listener = null;
         _scanCandidates = [];
-        _selectedIdentity = null;
-        _selectedScanResult = null;
-        _parser = new FtmsParser();
-        _normalizer = new FtmsRecordNormalizer();
-        _recordAssembler = new FtmsRecordAssembler();
+        _selectedDevice = null;
+        _reconnecting = false;
+        _assembler = new FtmsRecordAssembler();
         _latestSample = null;
-        _lastValidSampleAtMs = null;
+        _staleClockStartMs = null;
         _retryAttempt = 0;
-        _connectionAlerted = false;
-        _lostAlertCount = 0;
-        _restoredAlertCount = 0;
+        _wasLive = false;
+        _lostAlerted = false;
     }
 
     function setScheduler(scheduler as FtmsScheduler) as Void {
         _scheduler = scheduler;
-        _scheduler.setListener(self);
+        scheduler.setListener(self);
+    }
+
+    function setListener(listener as FtmsCoordinatorListener) as Void {
+        _listener = listener;
     }
 
     function getState() as Number {
@@ -60,31 +73,8 @@ class FtmsConnectionCoordinator {
         return _scanCandidates;
     }
 
-    function selectCandidate(identity as String) as Boolean {
-        for (var i = 0; i < _scanCandidates.size(); i += 1) {
-            var candidate = _scanCandidates[i];
-
-            if (candidate.identity.equals(identity)) {
-                _selectedIdentity = identity;
-                _selectedScanResult = candidate.scanResult;
-                _state = STATE_CONNECTING;
-                _retryAttempt = 0;
-                cancelScheduledWork();
-                _transport.stopScan();
-                _transport.connect(identity, _selectedScanResult);
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    function getSelectedIdentity() as String? {
-        return _selectedIdentity;
-    }
-
-    function getSelectedScanResult() as BluetoothLowEnergy.ScanResult? {
-        return _selectedScanResult;
+    function getSelectedDevice() as Object? {
+        return _selectedDevice;
     }
 
     function getLatestSample() as FtmsSample? {
@@ -101,171 +91,263 @@ class FtmsConnectionCoordinator {
         return sample.isValid() && sample.speedMps != null;
     }
 
-    function getLostAlertCount() as Number {
-        return _lostAlertCount;
+    function retryDelayMsForCurrentAttempt() as Number {
+        return FtmsConnectionPolicy.retryDelayMs(_retryAttempt);
     }
 
-    function getRestoredAlertCount() as Number {
-        return _restoredAlertCount;
-    }
-
+    // scan for the picker. starts a fresh candidate list.
     function beginScan() as Void {
         cancelScheduledWork();
+        _reconnecting = false;
+        _scanCandidates = [];
         _transport.startScan();
-        _state = STATE_SCANNING;
+        setState(STATE_SCANNING);
+    }
+
+    // picks a scanned treadmill and connects to it
+    function selectCandidate(device as Object) as Boolean {
+        for (var i = 0; i < _scanCandidates.size(); i += 1) {
+            var candidate = _scanCandidates[i];
+
+            if (_transport.isSameDevice(candidate.device, device)) {
+                _selectedDevice = candidate.device;
+                _retryAttempt = 0;
+                _wasLive = false;
+                _lostAlerted = false;
+                connectTo(candidate.device);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     function stop() as Void {
         cancelScheduledWork();
-        _recordAssembler.discard();
+        _assembler.discard();
+        _reconnecting = false;
+        _staleClockStartMs = null;
+        // leave link states first so the disconnect echo from unpairing is ignored
+        setState(STATE_UNCONFIGURED);
         _transport.stopScan();
         _transport.disconnect();
-        _state = STATE_UNCONFIGURED;
-        _lastValidSampleAtMs = null;
     }
 
     function onScanResult(
-        identity as String,
+        device as Object,
         name as String?,
-        rssi as Number,
-        scanResult as BluetoothLowEnergy.ScanResult?
+        rssi as Number
     ) as Void {
         if (_state != STATE_SCANNING) {
             return;
         }
 
-        // The string is a simulator key only. Production transports must pass
-        // the ScanResult and use it for isSameDevice-based matching.
-        for (var i = 0; i < _scanCandidates.size(); i += 1) {
-            var candidate = _scanCandidates[i];
+        upsertCandidate(device, name, rssi);
 
-            if (candidate.identity.equals(identity)) {
-                candidate.name = name;
-                candidate.rssi = rssi;
-                candidate.scanResult = scanResult;
-                return;
-            }
+        // during a reconnect scan only the selected treadmill is connected to;
+        // other FTMS devices are listed but ignored
+        var selected = _selectedDevice;
+
+        if (_reconnecting && selected != null &&
+            _transport.isSameDevice(selected, device)) {
+            // keep the newest handle for the same treadmill
+            _selectedDevice = device;
+            connectTo(device);
         }
-
-        _scanCandidates.add(new FtmsScanCandidate(
-            identity,
-            name,
-            rssi,
-            scanResult
-        ));
     }
 
     function onConnected() as Void {
+        if (_state != STATE_CONNECTING) {
+            return;
+        }
+
         cancelScheduledWork();
-        _state = STATE_DISCOVERING;
+        setState(STATE_DISCOVERING);
         _transport.discoverTreadmillData();
     }
 
-    function onConnectionFailed(reason as String) as Void {
-        enterBackoff();
-    }
-
-    function onSubscribed() as Void {
-        _state = STATE_SUBSCRIBING;
-        _lastValidSampleAtMs = null;
-    }
-
     function onTreadmillDataDiscovered() as Void {
-        _state = STATE_SUBSCRIBING;
+        if (_state != STATE_DISCOVERING) {
+            return;
+        }
+
+        setState(STATE_SUBSCRIBING);
         _transport.subscribeTreadmillData();
+    }
+
+    // the stale clock already runs from the first tick in SUBSCRIBING, so a
+    // confirmed subscription that never delivers data still goes stale
+    function onSubscribed() as Void {
     }
 
     function onTreadmillData(
         bytes as ByteArray,
         receivedAtMs as Number
     ) as Void {
-        var record = _recordAssembler.append(bytes, receivedAtMs);
-
-        if (record == null) {
+        if (_state != STATE_SUBSCRIBING && _state != STATE_READY &&
+            _state != STATE_STALE) {
             return;
         }
 
-        var parserBytes = _normalizer.normalize(record);
+        var sample = _assembler.append(bytes, receivedAtMs);
 
-        if (parserBytes == null) {
+        if (sample == null) {
             return;
         }
 
-        var sample = _parser.parse(parserBytes, record.receivedAtMs);
         _latestSample = sample;
 
-        // Warnings are diagnostic metadata. Only fatal parse errors or a
-        // missing mandatory speed sample prevent readiness.
-        if (sample.isValid() && sample.speedMps != null) {
-            if (_connectionAlerted) {
-                _restoredAlertCount += 1;
-                _connectionAlerted = false;
-            }
-
-            _retryAttempt = 0;
-            _lastValidSampleAtMs = receivedAtMs;
-            _state = STATE_READY;
+        // warnings are diagnostic metadata. only parse errors or a missing
+        // speed keep the coordinator out of READY.
+        if (!sample.isValid() || sample.speedMps == null) {
+            return;
         }
+
+        var restored = _lostAlerted;
+        _retryAttempt = 0;
+        _staleClockStartMs = receivedAtMs;
+        _wasLive = true;
+        _lostAlerted = false;
+        setState(STATE_READY);
+
+        var listener = _listener;
+
+        if (restored && listener != null) {
+            listener.onConnectionRestored();
+        }
+    }
+
+    function onConnectionFailed(reason as String) as Void {
+        if (!isLinkState()) {
+            return;
+        }
+
+        _assembler.discard();
+        enterBackoff();
+        // drop the half-open link so it does not hold a pairing slot. the
+        // disconnect echo arrives in BACKOFF and is ignored.
+        _transport.disconnect();
     }
 
     function onDisconnected(reason as String?) as Void {
-        _recordAssembler.discard();
-        _lastValidSampleAtMs = null;
+        if (!isLinkState()) {
+            return;
+        }
 
-        if (!_connectionAlerted) {
-            _lostAlertCount += 1;
-            _connectionAlerted = true;
+        _assembler.discard();
+
+        var alert = _wasLive && !_lostAlerted;
+
+        if (alert) {
+            _lostAlerted = true;
         }
 
         enterBackoff();
+
+        var listener = _listener;
+
+        if (alert && listener != null) {
+            listener.onConnectionLost();
+        }
     }
 
     function onScheduledWork() as Void {
-        if (_state != STATE_BACKOFF || _selectedIdentity == null) {
+        if (_state != STATE_BACKOFF || _selectedDevice == null) {
             return;
         }
 
+        _reconnecting = true;
         _transport.startScan();
-        _state = STATE_SCANNING;
+        setState(STATE_SCANNING);
     }
 
-    // The application timer calls this with a monotonic timestamp. Keeping
-    // time outside the coordinator makes stale behavior deterministic in tests.
+    // the app calls this about once a second with System.getTimer()
     function onTimerTick(nowMs as Number) as Void {
-        if (_lastValidSampleAtMs == null) {
+        if (_state != STATE_SUBSCRIBING && _state != STATE_READY) {
             return;
         }
 
-        if (nowMs - _lastValidSampleAtMs >= FtmsConnectionPolicy.STALE_AFTER_MS &&
-            (_state == STATE_READY || _state == STATE_SUBSCRIBING)) {
-            _state = STATE_STALE;
+        var startMs = _staleClockStartMs;
+
+        if (startMs == null) {
+            _staleClockStartMs = nowMs;
+            return;
+        }
+
+        if (nowMs - startMs >= FtmsConnectionPolicy.STALE_AFTER_MS) {
+            setState(STATE_STALE);
         }
     }
 
-    function retryDelayMsForCurrentAttempt() as Number {
-        return FtmsConnectionPolicy.retryDelayMs(_retryAttempt);
+    private function connectTo(device as Object) as Void {
+        cancelScheduledWork();
+        _reconnecting = false;
+        _staleClockStartMs = null;
+        _transport.stopScan();
+        setState(STATE_CONNECTING);
+        _transport.connect(device);
+    }
+
+    private function upsertCandidate(
+        device as Object,
+        name as String?,
+        rssi as Number
+    ) as Void {
+        for (var i = 0; i < _scanCandidates.size(); i += 1) {
+            var candidate = _scanCandidates[i];
+
+            if (_transport.isSameDevice(candidate.device, device)) {
+                candidate.device = device;
+                candidate.name = name;
+                candidate.rssi = rssi;
+                return;
+            }
+        }
+
+        _scanCandidates.add(new FtmsScanCandidate(device, name, rssi));
     }
 
     private function enterBackoff() as Void {
-        if (_selectedIdentity == null) {
-            _state = STATE_UNCONFIGURED;
+        if (_selectedDevice == null) {
+            setState(STATE_UNCONFIGURED);
             return;
         }
 
-        _state = STATE_BACKOFF;
+        setState(STATE_BACKOFF);
 
-        if (_scheduler != null) {
-            _scheduler.schedule(
-                FtmsConnectionPolicy.retryDelayMs(_retryAttempt)
-            );
+        var scheduler = _scheduler;
+
+        if (scheduler != null) {
+            scheduler.schedule(FtmsConnectionPolicy.retryDelayMs(_retryAttempt));
         }
 
         _retryAttempt += 1;
     }
 
+    // CONNECTING through STALE: a link exists or is being set up
+    private function isLinkState() as Boolean {
+        return _state >= STATE_CONNECTING && _state <= STATE_STALE;
+    }
+
+    private function setState(next as Number) as Void {
+        if (next == _state) {
+            return;
+        }
+
+        _state = next;
+
+        var listener = _listener;
+
+        if (listener != null) {
+            listener.onStateChanged(next);
+        }
+    }
+
     private function cancelScheduledWork() as Void {
-        if (_scheduler != null) {
-            _scheduler.cancel();
+        var scheduler = _scheduler;
+
+        if (scheduler != null) {
+            scheduler.cancel();
         }
     }
 }

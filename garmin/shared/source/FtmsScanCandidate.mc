@@ -1,23 +1,19 @@
 import Toybox.Lang;
-import Toybox.BluetoothLowEnergy;
 
+// one FTMS treadmill seen while scanning. device is the transport's opaque
+// handle; compare handles only with FtmsTransport.isSameDevice, never by name.
 class FtmsScanCandidate {
-    var identity as String;
+    var device as Object;
     var name as String?;
     var rssi as Number;
-    // The string is retained for simulator fixtures and diagnostics only.
-    // Production selection must use this ScanResult with isSameDevice().
-    var scanResult as BluetoothLowEnergy.ScanResult?;
 
     function initialize(
-        identity as String,
+        device as Object,
         name as String?,
-        rssi as Number,
-        scanResult as BluetoothLowEnergy.ScanResult?
+        rssi as Number
     ) {
-        self.identity = identity;
+        self.device = device;
         self.name = name;
         self.rssi = rssi;
-        self.scanResult = scanResult;
     }
 }

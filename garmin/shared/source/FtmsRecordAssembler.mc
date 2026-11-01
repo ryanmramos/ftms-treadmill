@@ -1,52 +1,45 @@
 import Toybox.Lang;
 
-// Collects FTMS notification boundaries. The parser must receive a complete
-// logical record, not a notification fragment. Field-level reassembly remains
-// deliberately separate from this boundary tracker because More Data changes
-// the presence of instantaneous speed on the final notification.
+// turns FTMS notifications into complete samples. every notification carries
+// its own flags, so each one is parsed on arrival. fragments with More Data set
+// are held and merged into the notification that clears it.
 class FtmsRecordAssembler {
-    private var _fragments as Array<ByteArray>;
+    private var _parser as FtmsParser;
+    private var _pending as FtmsSample?;
 
     function initialize() {
-        _fragments = [];
+        _parser = new FtmsParser();
+        _pending = null;
     }
 
+    // returns the merged sample once a notification clears More Data, else null
     function append(
         bytes as ByteArray,
         receivedAtMs as Number
-    ) as FtmsLogicalRecord? {
-        var reader = new FtmsByteReader(bytes);
-        var flags = reader.readU16LE();
+    ) as FtmsSample? {
+        var sample = _parser.parse(bytes, receivedAtMs);
+        var moreData = (sample.flags & FtmsConstants.FLAG_MORE_DATA) != 0;
+        var pending = _pending;
 
-        if (flags == null) {
-            discard();
+        if (pending != null) {
+            sample.mergeEarlier(pending);
+        }
+
+        if (moreData) {
+            _pending = sample;
             return null;
         }
 
-        _fragments.add(bytes);
-
-        if ((flags & FtmsConstants.FLAG_MORE_DATA) != 0) {
-            return null;
-        }
-
-        var complete = new FtmsLogicalRecord(
-            _fragments,
-            flags,
-            receivedAtMs
-        );
-        _fragments = [];
-        return complete;
+        _pending = null;
+        return sample;
     }
 
+    // drops a partial record, used on disconnect so fragments never span links
     function discard() as Void {
-        _fragments = [];
+        _pending = null;
     }
 
     function hasIncompleteRecord() as Boolean {
-        return _fragments.size() != 0;
-    }
-
-    function incompleteFragmentCount() as Number {
-        return _fragments.size();
+        return _pending != null;
     }
 }
