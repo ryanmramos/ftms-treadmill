@@ -1,8 +1,10 @@
 import Toybox.Lang;
 import Toybox.BluetoothLowEnergy;
 
-// Production BLE transport shell. Connection and characteristic callbacks are
-// added in later steps.
+// Production BLE transport. Owns the BleDelegate, FTMS profile registration,
+// FTMS scan filtering, pairing, the treadmill data CCCD subscription, and
+// read-only notification forwarding. It never writes treadmill control
+// characteristics.
 class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
     private var _listener as FtmsTransportListener?;
     private var _knownScanResults as Array<BluetoothLowEnergy.ScanResult>;
@@ -64,6 +66,17 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
             if (_listener != null) {
                 _listener.onConnectionFailed("connection rejected");
             }
+
+            return;
+        }
+
+        if (state == BluetoothLowEnergy.CONNECTION_STATE_DISCONNECTED) {
+            _device = null;
+            _treadmillDataCharacteristic = null;
+
+            if (_listener != null) {
+                _listener.onDisconnected("disconnected");
+            }
         }
     }
 
@@ -95,6 +108,18 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         if (_device == null && _listener != null) {
             _listener.onConnectionFailed("pairing failed");
         }
+    }
+
+    function disconnect() as Void {
+        var device = _device;
+
+        if (device != null) {
+            BluetoothLowEnergy.unpairDevice(device);
+        }
+
+        _device = null;
+        _treadmillDataCharacteristic = null;
+        _discoveryPending = false;
     }
 
     function discoverTreadmillData() as Void {
@@ -141,6 +166,36 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         }
     }
 
+    // writes 0x0001 to the treadmill data CCCD. this is the only write the
+    // transport performs; it enables notifications and never sends control data.
+    function subscribeTreadmillData() as Void {
+        var characteristic = _treadmillDataCharacteristic;
+
+        if (characteristic == null) {
+            if (_listener != null) {
+                _listener.onConnectionFailed("treadmill data characteristic missing");
+            }
+            return;
+        }
+
+        var cccd = characteristic.getDescriptor(BluetoothLowEnergy.cccdUuid());
+
+        if (cccd == null) {
+            if (_listener != null) {
+                _listener.onConnectionFailed("cccd descriptor missing");
+            }
+            return;
+        }
+
+        try {
+            cccd.requestWrite([0x01, 0x00]b);
+        } catch (ex instanceof BluetoothLowEnergy.InvalidRequestException) {
+            if (_listener != null) {
+                _listener.onConnectionFailed("subscription failed");
+            }
+        }
+    }
+
     function onProfileRegister(
         uuid as BluetoothLowEnergy.Uuid,
         status as BluetoothLowEnergy.Status
@@ -168,16 +223,52 @@ class FtmsBleTransport extends BluetoothLowEnergy.BleDelegate {
         }
     }
 
+    function onDescriptorWrite(
+        descriptor as BluetoothLowEnergy.Descriptor,
+        status as BluetoothLowEnergy.Status
+    ) as Void {
+        var characteristic = descriptor.getCharacteristic();
+
+        if (!characteristic.getUuid().equals(BluetoothLowEnergy.stringToUuid(FtmsConstants.TREADMILL_DATA_UUID))) {
+            return;
+        }
+
+        if (status != BluetoothLowEnergy.STATUS_SUCCESS) {
+            if (_listener != null) {
+                _listener.onConnectionFailed("subscription failed");
+            }
+            return;
+        }
+
+        if (_listener != null) {
+            _listener.onSubscribed();
+        }
+    }
+
+    function onCharacteristicChanged(
+        characteristic as BluetoothLowEnergy.Characteristic,
+        value as ByteArray
+    ) as Void {
+        if (!characteristic.getUuid().equals(BluetoothLowEnergy.stringToUuid(FtmsConstants.TREADMILL_DATA_UUID))) {
+            return;
+        }
+
+        if (_listener != null) {
+            _listener.onTreadmillData(value, System.getTimer());
+        }
+    }
+
     private function advertisesFtmsService(
         scanResult as BluetoothLowEnergy.ScanResult
     ) as Boolean {
+        var ftmsServiceUuid = BluetoothLowEnergy.stringToUuid(FtmsConstants.FTMS_SERVICE_UUID);
         var serviceUuids = scanResult.getServiceUuids();
         var nextUuid = serviceUuids.next();
 
         while (nextUuid != null) {
             var serviceUuid = nextUuid as BluetoothLowEnergy.Uuid;
 
-            if (serviceUuid.equals(FtmsConstants.FTMS_SERVICE_UUID)) {
+            if (serviceUuid.equals(ftmsServiceUuid)) {
                 return true;
             }
 
